@@ -85,7 +85,9 @@ func main() {
 			}
 		default:
 			// Ignore other events..
-			fmt.Printf("Unexpected: %+v\n", msg.Data)
+			if s.config.isDebug {
+				fmt.Printf("Unexpected: %+v\n", msg.Data)
+			}
 
 			// TODO: 画像を直接uploadしたやつも画像表示したい
 		}
