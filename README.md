@@ -5,7 +5,9 @@ NINJA（忍者）
 
 
 ## Usage
+![image](https://user-images.githubusercontent.com/1456047/63650375-15184280-c785-11e9-899b-2a9d68680ce5.png)
 
+slack botを作成し、視聴したいtl_xxxx / times_xxxx にinviteし、以下を起動する。
 
 ```shell script
 $ ./ninja -token <slack bot token>
