@@ -37,6 +37,7 @@ func main() {
 	go rtm.ManageConnection()
 
 	s := Service{api: api, config: Config{
+		token:   *botToken,
 		isDebug: *isDebug,
 		isImage: *isImage,
 		iconDir: *iconDir,
@@ -63,9 +64,28 @@ func main() {
 		case *slack.InvalidAuthEvent:
 			return
 
+		case *slack.FileSharedEvent:
+			if s.config.isImage {
+				fileInfo, _, _, err := api.GetFileInfo(ev.FileID, 1, 1)
+				if err != nil {
+					continue
+				}
+
+				if err := os.MkdirAll("files", 0755); err != nil {
+					// スルー
+				}
+				fPath := filepath.Join("files", fileInfo.Name)
+				s.downloadImage(fPath, fileInfo.URLPrivateDownload)
+				f, err := os.Open(fPath)
+				if err != nil {
+					continue
+				}
+				renderImage(f)
+				fmt.Println()
+			}
 		default:
 			// Ignore other events..
-			//fmt.Printf("Unexpected: %v\n", msg.Data)
+			fmt.Printf("Unexpected: %+v\n", msg.Data)
 
 			// TODO: 画像を直接uploadしたやつも画像表示したい
 		}
@@ -74,6 +94,7 @@ func main() {
 
 // Config 設定
 type Config struct {
+	token   string
 	isDebug bool
 	isImage bool
 	iconDir string
@@ -105,13 +126,13 @@ func (s *Service) messageHandler(ev *slack.MessageEvent) {
 			f, err := os.Open(userFilepath)
 			if err != nil {
 				// ファイルがなかったりエラーなら取得しなおす
-				downloadImage(userFilepath, u.Profile.Image48)
+				s.downloadImage(userFilepath, u.Profile.Image48)
 				f, err = os.Open(userFilepath)
 			}
 
 			// 最終的にファイルがエラーじゃなければdecodeして表示する
 			if err == nil {
-				renderImage(f)
+				renderImageSize(f, 40, 40)
 			}
 		}
 	}
@@ -125,6 +146,10 @@ func (s *Service) messageHandler(ev *slack.MessageEvent) {
 }
 
 func renderImage(f *os.File) {
+	renderImageSize(f, 0, 0)
+}
+
+func renderImageSize(f *os.File, w, h uint) {
 	img, _, err := image.Decode(f)
 	if err != nil {
 		panic(err) // TODO: あとで
@@ -136,14 +161,20 @@ func renderImage(f *os.File) {
 
 	enc := sixel.NewEncoder(buf)
 	enc.Dither = true
-	if err := enc.Encode(resize.Resize(40, 40, img, resize.Bicubic)); err != nil {
+	if err := enc.Encode(resize.Resize(w, h, img, resize.Bicubic)); err != nil {
 		panic(err) // TODO: あとで
 	}
 }
 
 // ファイルをダウンロードしてローカルに保存します
-func downloadImage(outputFilePath string, downloadURL string) {
-	response, err := http.Get(downloadURL)
+func (s *Service) downloadImage(outputFilePath string, downloadURL string) {
+	req, err := http.NewRequest(http.MethodGet, downloadURL, nil)
+	if err != nil {
+		panic(err) // TODO: あとで
+	}
+	req.Header.Set("Authorization", "Bearer "+s.config.token)
+
+	response, err := http.DefaultClient.Do(req)
 	if err != nil {
 		panic(err) // TODO: あとで
 	}
