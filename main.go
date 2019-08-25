@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/kyokomi/emoji"
 	"github.com/mattn/go-sixel"
@@ -43,6 +44,8 @@ func main() {
 		iconDir: *iconDir,
 	}}
 
+	syncFile := sync.Map{}
+
 	for msg := range rtm.IncomingEvents {
 		//fmt.Print("Event Received: ")
 		switch ev := msg.Data.(type) {
@@ -66,6 +69,14 @@ func main() {
 
 		case *slack.FileSharedEvent:
 			if s.config.isImage {
+				if s.config.isDebug {
+					fmt.Printf("FileShare: %+v\n", msg.Data)
+				}
+
+				if _, ok := syncFile.Load(ev.FileID); ok {
+					continue // すでに表示ずみはskip
+				}
+
 				fileInfo, _, _, err := api.GetFileInfo(ev.FileID, 1, 1)
 				if err != nil {
 					continue
@@ -82,6 +93,7 @@ func main() {
 				}
 				renderImage(f)
 				fmt.Println()
+				syncFile.Store(ev.FileID, nil)
 			}
 		default:
 			// Ignore other events..
