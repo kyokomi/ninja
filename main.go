@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"image"
+	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
@@ -15,7 +16,7 @@ import (
 	"sync"
 
 	"github.com/kyokomi/emoji"
-	"github.com/mattn/go-sixel"
+	sixel "github.com/mattn/go-sixel"
 	"github.com/nfnt/resize"
 	"github.com/nlopes/slack"
 )
@@ -42,9 +43,7 @@ func main() {
 		isDebug: *isDebug,
 		isImage: *isImage,
 		iconDir: *iconDir,
-	}}
-
-	syncFile := sync.Map{}
+	}, syncFile: &sync.Map{}}
 
 	for msg := range rtm.IncomingEvents {
 		//fmt.Print("Event Received: ")
@@ -73,27 +72,7 @@ func main() {
 					fmt.Printf("FileShare: %+v\n", msg.Data)
 				}
 
-				if _, ok := syncFile.Load(ev.FileID); ok {
-					continue // すでに表示ずみはskip
-				}
-
-				fileInfo, _, _, err := api.GetFileInfo(ev.FileID, 1, 1)
-				if err != nil {
-					continue
-				}
-
-				if err := os.MkdirAll("files", 0755); err != nil {
-					// スルー
-				}
-				fPath := filepath.Join("files", fileInfo.Name)
-				s.downloadImage(fPath, fileInfo.URLPrivateDownload)
-				f, err := os.Open(fPath)
-				if err != nil {
-					continue
-				}
-				renderImage(f)
-				fmt.Println()
-				syncFile.Store(ev.FileID, nil)
+				s.fireShareHandler(ev)
 			}
 		default:
 			// Ignore other events..
@@ -118,6 +97,9 @@ type Config struct {
 type Service struct {
 	api    *slack.Client
 	config Config
+
+	// 同じファイルを何回もdownloadして表示しないようにするlock
+	syncFile *sync.Map
 }
 
 func (s *Service) messageHandler(ev *slack.MessageEvent) {
@@ -159,6 +141,37 @@ func (s *Service) messageHandler(ev *slack.MessageEvent) {
 	}
 }
 
+func (s *Service) fireShareHandler(ev *slack.FileSharedEvent) {
+	if _, ok := s.syncFile.Load(ev.FileID); ok {
+		return // すでに表示ずみはskip
+	}
+
+	fileInfo, _, _, err := s.api.GetFileInfo(ev.FileID, 1, 1)
+	if err != nil {
+		return
+	}
+
+	switch filepath.Ext(fileInfo.URLPrivateDownload) {
+	case ".png", ".jpg", ".jpeg", ".gif":
+		break
+	default:
+		return
+	}
+
+	if err := os.MkdirAll("files", 0755); err != nil {
+		// スルー
+	}
+	fPath := filepath.Join("files", fileInfo.Name)
+	s.downloadImageAuth(fPath, fileInfo.URLPrivateDownload)
+	f, err := os.Open(fPath)
+	if err != nil {
+		panic(err) // TODO: あとで
+	}
+	renderImage(f)
+	fmt.Println()
+	s.syncFile.Store(ev.FileID, nil)
+}
+
 func renderImage(f *os.File) {
 	renderImageSize(f, 0, 0)
 }
@@ -181,13 +194,36 @@ func renderImageSize(f *os.File, w, h uint) {
 }
 
 // ファイルをダウンロードしてローカルに保存します
-func (s *Service) downloadImage(outputFilePath string, downloadURL string) {
+func (s *Service) downloadImageAuth(outputFilePath string, downloadURL string) {
 	req, err := http.NewRequest(http.MethodGet, downloadURL, nil)
 	if err != nil {
 		panic(err) // TODO: あとで
 	}
 	req.Header.Set("Authorization", "Bearer "+s.config.token)
 
+	response, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err) // TODO: あとで
+	}
+	defer response.Body.Close()
+
+	file, err := os.Create(outputFilePath)
+	if err != nil {
+		panic(err) // TODO: あとで
+	}
+	defer file.Close()
+
+	if _, err := io.Copy(file, response.Body); err != nil {
+		panic(err) // TODO: あとで
+	}
+}
+
+// ファイルをダウンロードしてローカルに保存します
+func (s *Service) downloadImage(outputFilePath string, downloadURL string) {
+	req, err := http.NewRequest(http.MethodGet, downloadURL, nil)
+	if err != nil {
+		panic(err) // TODO: あとで
+	}
 	response, err := http.DefaultClient.Do(req)
 	if err != nil {
 		panic(err) // TODO: あとで
