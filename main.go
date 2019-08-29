@@ -26,6 +26,7 @@ func main() {
 	isDebug := flag.Bool("debug", false, "slack bot debug flag")
 	logPrefix := flag.String("log-prefix", "slack-bot: ", "log prefix")
 	isImage := flag.Bool("image", true, "window not support")
+	maxImageWidth := flag.Uint("max-image-width", 480, "max image size(width)")
 	iconDir := flag.String("icon-dir", "./icons", "icon file directory path")
 	flag.Parse()
 
@@ -39,10 +40,11 @@ func main() {
 	go rtm.ManageConnection()
 
 	s := Service{api: api, config: Config{
-		token:   *botToken,
-		isDebug: *isDebug,
-		isImage: *isImage,
-		iconDir: *iconDir,
+		token:         *botToken,
+		isDebug:       *isDebug,
+		isImage:       *isImage,
+		iconDir:       *iconDir,
+		maxImageWidth: *maxImageWidth,
 	}, syncFile: &sync.Map{}}
 
 	for msg := range rtm.IncomingEvents {
@@ -87,10 +89,11 @@ func main() {
 
 // Config 設定
 type Config struct {
-	token   string
-	isDebug bool
-	isImage bool
-	iconDir string
+	token         string
+	isDebug       bool
+	isImage       bool
+	iconDir       string
+	maxImageWidth uint
 }
 
 // Service いろいろやっていき
@@ -167,13 +170,13 @@ func (s *Service) fireShareHandler(ev *slack.FileSharedEvent) {
 	if err != nil {
 		panic(err) // TODO: あとで
 	}
-	renderImage(f)
+	s.renderImage(f)
 	fmt.Println()
 	s.syncFile.Store(ev.FileID, nil)
 }
 
-func renderImage(f *os.File) {
-	renderImageSize(f, 0, 0)
+func (s *Service) renderImage(f *os.File) {
+	renderImageSize(f, s.config.maxImageWidth, 0) // でかすぎる画像がしんどいのでw=480を最大にする
 }
 
 func renderImageSize(f *os.File, w, h uint) {
