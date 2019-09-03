@@ -13,7 +13,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
+	"time"
 
 	"github.com/kyokomi/emoji"
 	sixel "github.com/mattn/go-sixel"
@@ -136,7 +138,7 @@ func (s *Service) messageHandler(ev *slack.MessageEvent) {
 		}
 	}
 
-	fmt.Println(channelName, username, emoji.Sprint(ev.Text))
+	fmt.Println(parseTime(ev.EventTimestamp), channelName, username, emoji.Sprint(ev.Text))
 
 	// TODO: TextにURLが含まれてるケースも画像を展開したい
 	if s.config.isImage {
@@ -242,4 +244,10 @@ func (s *Service) downloadImage(outputFilePath string, downloadURL string) {
 	if _, err := io.Copy(file, response.Body); err != nil {
 		panic(err) // TODO: あとで
 	}
+}
+
+func parseTime(eventTimestamp string) time.Time {
+	// 1567271776.014700 のようなEpochTime文字列なので数値にParseしてUnixTimeに変換する
+	tf, _ := strconv.ParseFloat(eventTimestamp, 64)
+	return time.Unix(int64(tf), 0)
 }
